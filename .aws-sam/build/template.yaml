@@ -1,0 +1,103 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'Serverless backend for Digital Twin Manufacturing Monitoring.
+
+  '
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 15
+    MemorySize: 256
+    Architectures:
+    - x86_64
+Resources:
+  TelemetryQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: digital-twin-telemetry-queue
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 345600
+  TelemetryDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: digital-twin-telemetry-dlq
+      MessageRetentionPeriod: 1209600
+  TelemetryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: digital-twin-telemetry
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: machine_id
+        AttributeType: S
+      - AttributeName: timestamp
+        AttributeType: S
+      KeySchema:
+      - AttributeName: machine_id
+        KeyType: HASH
+      - AttributeName: timestamp
+        KeyType: RANGE
+  IngestionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: digital-twin-ingestion
+      CodeUri: IngestionFunction
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          QUEUE_URL:
+            Ref: TelemetryQueue
+      Policies:
+      - SQSSendMessagePolicy:
+          QueueName:
+            Fn::GetAtt:
+            - TelemetryQueue
+            - QueueName
+      Events:
+        TelemetryApi:
+          Type: HttpApi
+          Properties:
+            Path: /telemetry
+            Method: POST
+    Metadata:
+      SamResourceId: IngestionFunction
+  WorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: digital-twin-worker
+      CodeUri: WorkerFunction
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          TABLE_NAME:
+            Ref: TelemetryTable
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: TelemetryTable
+      Events:
+        QueueEvent:
+          Type: SQS
+          Properties:
+            Queue:
+              Fn::GetAtt:
+              - TelemetryQueue
+              - Arn
+            BatchSize: 10
+            FunctionResponseTypes:
+            - ReportBatchItemFailures
+    Metadata:
+      SamResourceId: WorkerFunction
+Outputs:
+  TelemetryApiUrl:
+    Description: Public telemetry ingestion endpoint
+    Value:
+      Fn::Sub: https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/telemetry
+  TelemetryTableName:
+    Description: DynamoDB telemetry table
+    Value:
+      Ref: TelemetryTable
+  TelemetryQueueUrl:
+    Description: SQS telemetry queue
+    Value:
+      Ref: TelemetryQueue
