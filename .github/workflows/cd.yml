@@ -1,0 +1,52 @@
+name: Digital Twin CD
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-worker:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - name: Build worker Lambda package
+        run: |
+          mkdir -p build/worker
+
+          if [ -f cloud_backend/worker/requirements.txt ]; then
+            pip install \
+              -r cloud_backend/worker/requirements.txt \
+              -t build/worker
+          fi
+
+          cp cloud_backend/worker/app.py \
+             build/worker/lambda_function.py
+
+          cd build/worker
+          zip -r ../digital-twin-worker.zip .
+
+      - name: Deploy worker Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name digital-twin-worker \
+            --zip-file fileb://build/digital-twin-worker.zip
+
+      - name: Wait for deployment
+        run: |
+          aws lambda wait function-updated \
+            --function-name digital-twin-worker
