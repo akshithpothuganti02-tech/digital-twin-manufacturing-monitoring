@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy-worker:
+  deploy-lambdas:
     runs-on: ubuntu-latest
 
     steps:
@@ -23,10 +23,16 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: us-east-1
+
       - name: Verify AWS identity
-        run: aws sts get-caller-identity  
+        run: aws sts get-caller-identity
+
+      # ----------------------------------------
+      # Build worker Lambda
+      # ----------------------------------------
       - name: Build worker Lambda package
         run: |
+          rm -rf build/worker
           mkdir -p build/worker
 
           if [ -f cloud_backend/worker/requirements.txt ]; then
@@ -41,13 +47,50 @@ jobs:
           cd build/worker
           zip -r ../digital-twin-worker.zip .
 
+      # ----------------------------------------
+      # Deploy worker Lambda
+      # ----------------------------------------
       - name: Deploy worker Lambda
         run: |
           aws lambda update-function-code \
             --function-name digital-twin-worker \
             --zip-file fileb://build/digital-twin-worker.zip
 
-      - name: Wait for deployment
+      - name: Wait for worker deployment
         run: |
           aws lambda wait function-updated \
             --function-name digital-twin-worker
+
+      # ----------------------------------------
+      # Build ingestion Lambda
+      # ----------------------------------------
+      - name: Build ingestion Lambda package
+        run: |
+          rm -rf build/ingestion
+          mkdir -p build/ingestion
+
+          if [ -f cloud_backend/ingestion/requirements.txt ]; then
+            pip install \
+              -r cloud_backend/ingestion/requirements.txt \
+              -t build/ingestion
+          fi
+
+          cp cloud_backend/ingestion/app.py \
+             build/ingestion/lambda_function.py
+
+          cd build/ingestion
+          zip -r ../digital-twin-ingestion.zip .
+
+      # ----------------------------------------
+      # Deploy ingestion Lambda
+      # ----------------------------------------
+      - name: Deploy ingestion Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name digital-twin-ingestion \
+            --zip-file fileb://build/digital-twin-ingestion.zip
+
+      - name: Wait for ingestion deployment
+        run: |
+          aws lambda wait function-updated \
+            --function-name digital-twin-ingestion
