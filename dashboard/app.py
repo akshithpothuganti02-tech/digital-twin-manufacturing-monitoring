@@ -17,7 +17,7 @@ from machine_details import render_machine_details
 from machine_table import render_machine_table
 from metrics import render_metrics
 from sidebar import render_sidebar
-
+from service_controls import render_service_controls
 
 st.set_page_config(
     page_title=PAGE_TITLE,
@@ -29,7 +29,7 @@ st.set_page_config(
 st.title("🏭 Digital Twin Manufacturing Monitoring")
 
 render_sidebar()
-
+render_service_controls()	
 
 # --------------------------------------------------
 # Load data from the Fog Node
